@@ -1,0 +1,277 @@
+---
+title: "Atlas de Astrocartografía"
+subtitle: <a href="#">Análisis de Influencias Planetarias por Ubicación Geográfica</a>
+format: 
+  dashboard:
+    orientation: columns
+    theme: cosmo
+    nav-buttons: 
+      - reddit
+      - twitter
+      - linkedin
+      - icon: github
+        href: https://github.com/
+---
+
+```{r}
+#| label: cargar-bibliotecas
+
+library(tidyverse)
+library(sf)
+library(plotly)
+library(DT)
+library(tmap)
+library(bslib)
+library(bsicons)
+library(leaflet)
+```
+
+```{r}
+#| label: cargar-datos
+
+# Datos de astrocartografía
+astro_data <- tibble(
+  Lugar = c("San José", "Cartago", "Alajuela", "Heredia", "Liberia", "Puntarenas", "Limón"),
+  Latitud = c(9.9333, 9.8647, 10.0167, 10.0024, 10.6341, 9.9764, 9.9909),
+  Longitud = c(-84.0833, -83.9193, -84.2167, -84.1167, -85.4406, -84.8369, -83.0336),
+  Planeta = c("Marte", "Venus", "Júpiter", "Saturno", "Mercurio", "Sol", "Luna"),
+  Influencia = c("Energía y acción", "Amor y belleza", "Expansión y crecimiento", "Disciplina y estructura", "Comunicación y rapidez", "Vitalidad y liderazgo", "Intuición y emociones"),
+  Intensidad = c(8.5, 9.2, 7.8, 6.9, 8.1, 9.5, 8.8),
+  Tipo_Linea = c("Ascendente", "Medio Cielo", "Descendente", "Ascendente", "Medio Cielo", "Ascendente", "Descendente")
+)
+
+# Crear objeto sf para mapas
+astro_sf <- st_as_sf(astro_data, coords = c("Longitud", "Latitud"), crs = 4326)
+
+# DATOS CLAVE
+intensidad_promedio <- mean(astro_data$Intensidad, na.rm = TRUE)
+lugar_mayor_intensidad <- astro_data |> slice_max(Intensidad, n = 1)
+lugar_menor_intensidad <- astro_data |> slice_min(Intensidad, n = 1)
+planeta_mas_frecuente <- astro_data |> count(Planeta, sort = TRUE) |> slice_head(n = 1)
+```
+
+## Column {width=50%}
+
+### Row [height=30%]
+
+```{r}
+#| label: valueboxes
+
+layout_column_wrap(
+  width         = 1/3,          # 3 columnas
+  heights_equal = "row",        # misma altura por fila
+  gap           = "0.75rem",    # separación
+  value_box(
+    title     = "Intensidad Promedio",
+    value     = scales::number(intensidad_promedio, .1),
+    showcase  = bs_icon("stars"),
+    theme     = "primary"
+  ),
+  value_box(
+    title     = paste("Mayor Intensidad:", lugar_mayor_intensidad$Lugar),
+    value     = scales::number(lugar_mayor_intensidad$Intensidad, .1),
+    showcase  = bs_icon("arrow-up-circle"),
+    theme     = "success"
+  ),
+  value_box(
+    title     = paste("Menor Intensidad:", lugar_menor_intensidad$Lugar),
+    value     = scales::number(lugar_menor_intensidad$Intensidad, .1),
+    showcase  = bs_icon("arrow-down-circle"),
+    theme     = "warning"
+  )
+)
+```
+
+### Row [height=70%]
+
+```{r}
+#| label: mapa-astrocartografia
+
+# Configurar tmap para modo interactivo
+tmap_mode("view")
+
+# Crear colores para cada planeta
+colores_planetas <- c(
+  "Marte" = "#FF6B6B",
+  "Venus" = "#4ECDC4", 
+  "Júpiter" = "#45B7D1",
+  "Saturno" = "#96CEB4",
+  "Mercurio" = "#FFEAA7",
+  "Sol" = "#FDCB6E",
+  "Luna" = "#E17055"
+)
+
+# Agregar columna de colores al dataframe
+astro_data_map <- astro_data %>%
+  mutate(color = colores_planetas[Planeta])
+
+# Crear objeto sf
+astro_sf_map <- st_as_sf(astro_data_map, coords = c("Longitud", "Latitud"), crs = 4326)
+
+# Crear el mapa
+mapa <- 
+  tm_view(set_view = c(lon = -84.0833, lat = 9.9333, zoom = 8)) +
+  tm_basemap(c("OpenStreetMap", "Esri.WorldGrayCanvas", "Esri.WorldImagery")) +
+  tm_shape(astro_sf_map) +
+  tm_dots(
+    fill = "Planeta",
+    fill.scale = tm_scale_categorical(
+      values = colores_planetas
+    ),
+    fill.legend = tm_legend(title = "Planetas"),
+    size = "Intensidad",
+    size.scale = tm_scale_continuous(values = c(0.5, 2)),
+    size.legend = tm_legend(title = "Intensidad"),
+    stroke = TRUE,
+    stroke.col = "white",
+    stroke.lwd = 1,
+    id = "Lugar",
+    popup.vars = c(
+      "Lugar" = "Lugar",
+      "Planeta" = "Planeta", 
+      "Influencia" = "Influencia",
+      "Intensidad" = "Intensidad",
+      "Tipo de Línea" = "Tipo_Linea"
+    )
+  )
+
+# Mostrar el mapa
+mapa
+```
+
+## Column {width=50%}
+
+### Row {.tabset}
+
+```{r}
+#| label: grafico-intensidad-por-planeta
+#| title: "Intensidad por Planeta"
+
+# Definir el gráfico ggplot2
+grafico_intensidad <-
+  astro_data |>
+  arrange(-Intensidad) |>
+  ggplot(aes(x = reorder(Planeta, -Intensidad), y = Intensidad, fill = Planeta)) +
+  geom_col(
+    aes(
+      text = paste0(
+        "Planeta: ", Planeta, "\n",
+        "Lugar: ", Lugar, "\n",
+        "Intensidad: ", Intensidad
+      )
+    )
+  ) +
+  scale_fill_manual(values = colores_planetas) +
+  xlab("Planeta") +
+  ylab("Intensidad") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none"
+  )
+
+# Mostrar el gráfico plotly
+ggplotly(grafico_intensidad, tooltip = "text") |> 
+  config(locale = 'es')
+```
+
+```{r}
+#| label: grafico-ubicaciones
+#| title: "Distribución Geográfica"
+
+# Gráfico de dispersión geográfica
+grafico_ubicacion <-
+  astro_data |>
+  ggplot(aes(x = Longitud, y = Latitud, color = Planeta, size = Intensidad)) +
+  geom_point(
+    aes(
+      text = paste0(
+        "Lugar: ", Lugar, "\n",
+        "Planeta: ", Planeta, "\n",
+        "Intensidad: ", Intensidad, "\n",
+        "Influencia: ", Influencia
+      )
+    ),
+    alpha = 0.8
+  ) +
+  scale_color_manual(values = colores_planetas) +
+  scale_size_continuous(range = c(3, 12)) +
+  labs(
+    title = "Distribución de Influencias Planetarias",
+    x = "Longitud",
+    y = "Latitud",
+    color = "Planeta",
+    size = "Intensidad"
+  ) +
+  theme_minimal()
+
+# Mostrar el gráfico plotly
+ggplotly(grafico_ubicacion, tooltip = "text") |> 
+  config(locale = 'es')
+```
+
+```{r}
+#| label: grafico-tipos-linea
+#| title: "Tipos de Líneas Planetarias"
+
+# Gráfico de barras por tipo de línea
+grafico_lineas <-
+  astro_data |>
+  count(Tipo_Linea, Planeta) |>
+  ggplot(aes(x = Tipo_Linea, y = n, fill = Planeta)) +
+  geom_col(
+    position = "dodge",
+    aes(
+      text = paste0(
+        "Tipo de Línea: ", Tipo_Linea, "\n",
+        "Planeta: ", Planeta, "\n",
+        "Cantidad: ", n
+      )
+    )
+  ) +
+  scale_fill_manual(values = colores_planetas) +
+  labs(
+    title = "Distribución de Tipos de Líneas",
+    x = "Tipo de Línea",
+    y = "Cantidad",
+    fill = "Planeta"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Mostrar el gráfico plotly
+ggplotly(grafico_lineas, tooltip = "text") |> 
+  config(locale = 'es')
+```
+
+### Row
+
+```{r}
+#| label: tabla-astrocartografia
+#| title: "Tabla Completa de Influencias Planetarias"
+
+# Definir tabla
+tabla_astro <-
+  astro_data |>
+  arrange(desc(Intensidad)) |>
+  mutate(Intensidad = round(Intensidad, 1)) |>
+  datatable(
+    rownames = FALSE,
+    colnames = c("Lugar", "Latitud", "Longitud", "Planeta", "Influencia", "Intensidad", "Tipo de Línea"),
+    options = list(
+      dom = 'ft',
+      pageLength = 7,
+      language = list(url = '//cdn.datatables.net/plug-ins/1.10.11/i18n/Spanish.json')
+    )
+  ) |>
+  formatStyle(
+    "Intensidad",
+    backgroundColor = styleInterval(
+      cuts = c(7, 8, 9),
+      values = c("#ffcccc", "#ffffcc", "#ccffcc", "#ccffff")
+    )
+  )
+
+# Mostrar tabla
+tabla_astro
+```
